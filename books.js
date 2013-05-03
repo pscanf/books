@@ -3,7 +3,6 @@ var fs = require("fs");
 var crypto = require("crypto");
 var lazydb = require("./lazydb");
 var error = require("./error");
-var WebSocketServer = require("ws").Server;
 
 var opt;
 
@@ -17,9 +16,6 @@ var init = function () {
 	var http_srv = http.createServer();
 	http_srv.on("request", handle_http_request);
 	http_srv.listen(opt.http_port);
-
-	var ws_srv = new WebSocketServer({port: opt.ws_port});
-	wss.on("connection", handle_ws_connection);
 };
 
 var handle_http_request = function (req, res) {
@@ -48,6 +44,10 @@ var handle_http_request = function (req, res) {
 
 		if (body.action === "del") {
 			handle_del(body, finalize_response);
+		}
+
+		if (body.action === "search") {
+			handle_search(body, finalize_response);
 		}
 
 	});
@@ -119,7 +119,6 @@ var handle_del = function (body, callback) {
 		callback(error[400]);
 		return;
 	}
-
 	authenticate(body.username, body.password, function (err) {
 		if (err) {
 			callback(error[402]);
@@ -134,4 +133,47 @@ var handle_del = function (body, callback) {
 			callback(false);
 		});
 	});
+};
+
+var authenticate = function (username, password, callback) {
+	callback(false);
+};
+
+var handle_search = function (body, callback) {
+	if (!Array.isArray(body.keywords)) {
+		callback(error[400]);
+		return;
+	}
+	var results = [];
+	db.iterate(function (kvp) {
+		var result = {};
+		result.key = kvp.key.toString();
+		result.score = score(JSON.parse(kvp.value.toString()), keywords);
+	});
+	results.sort(function (a, b) {
+		return (b.score - a.score);
+	});
+	callback(false, JSON.stringify(results));
+};
+
+var score = function (object, keywords) {
+	var word, index_name, index, i, j, tmp_obj, matches;
+	var score = 0;
+	for (i=0; i<keywords.length; i++) {
+		word = keywords[i];
+		regexp = new RegExp(word, "gi");
+		for (index_name in opt.indexes) {
+			if (opt.indexes.hasOwnProperty(index_name)) {
+				index = opt.indexes[index_name];
+				tmp_obj = object;
+				for (j=0; j<index.path.length; i++) {
+					tmp_obj = tmp_obj[index.path[i]];
+				}
+				matches = tmp_obj.match(regexp);
+				if (matches) {
+					score += matches.length;
+				}
+			}
+		}
+	}
 };

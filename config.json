@@ -1,0 +1,23 @@
+{
+	"http_port" : 8081,
+	
+	"indexes" : {
+		"title" : {
+			"path" : ["title"],
+			"score" : 10
+		},
+		"subtitle" : {
+			"path" : ["subtitle"],
+			"score" : 9
+		},
+		"author" : {
+			"path" : ["author"],
+			"score" : 10
+		},
+		"notes" : {
+			"path" : ["notes"],
+			"score" : 2
+		}
+	}
+
+}
