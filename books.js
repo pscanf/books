@@ -1,18 +1,20 @@
 var http = require("http");
 var fs = require("fs");
 var crypto = require("crypto");
-//var lazydb = require("./lazydb");
-//var error = require("./error");
+var lazydb = require("../lazydb");
+var error = require("../error");
 
-//var opt;
+var opt, books_db;
 
 var load_options = function () {
 	var config_path = process.argv[2];
 	var opt_string = fs.readFileSync(config_path, "utf8");
-	opt = JSON.parse(opt_string);
+	return JSON.parse(opt_string);
 };
 
 var init = function () {
+	opt = load_options();
+	books_db = lazydb.open("./books");
 	var http_srv = http.createServer();
 	http_srv.on("request", handle_http_request);
 	http_srv.listen(opt.http_port);
@@ -25,7 +27,6 @@ var handle_http_request = function (req, res) {
 		body += chunk;
 	});
 	req.on("end", function () {
-		var ans;
 		try {
 			body = JSON.parse(body);
 		} catch (e) {
@@ -33,6 +34,16 @@ var handle_http_request = function (req, res) {
 			res.end();
 			return;
 		}
+
+		var finalize_response = function (err, ans) {
+			if (err) {
+				res.writeHead(400);
+				res.end();
+				return;
+			}
+			res.writeHead(200);
+			res.end(ans);
+		};
 
 		if (body.action === "get") {
 			handle_get(body, finalize_response);
@@ -62,7 +73,8 @@ var handle_get = function (body, callback) {
 	key = new Buffer(body.key);
 	value = books_db.get(key);
 	if (!value) {
-		callback(erorr[401]);
+		callback(error[400]);
+		return;
 	}
 	value = value.toString();
 	kvp = {
@@ -91,12 +103,12 @@ var handle_put = function (body, callback) {
 	}
 	authenticate(body.username, body.password, function (err) {
 		if (err) {
-			callback(error[402]);
+			callback(error[400]);
 			return;
 		}
 		var key = new Buffer(body.key);
 		var value = new Buffer(body.value);
-		books_db.put(body.key, body.value, function (err) {
+		books_db.put(key, value, function (err) {
 			if (err) {
 				callback(err);
 				return;
@@ -121,7 +133,7 @@ var handle_del = function (body, callback) {
 	}
 	authenticate(body.username, body.password, function (err) {
 		if (err) {
-			callback(error[402]);
+			callback(error[400]);
 			return;
 		}
 		var key = new Buffer(body.key);
@@ -145,10 +157,11 @@ var handle_search = function (body, callback) {
 		return;
 	}
 	var results = [];
-	db.iterate(function (kvp) {
+	books_db.iterate(function (kvp) {
 		var result = {};
 		result.key = kvp.key.toString();
-		result.score = score(JSON.parse(kvp.value.toString()), keywords);
+		result.score = score(JSON.parse(kvp.value.toString()), body.keywords);
+		results.push(result);
 	});
 	results.sort(function (a, b) {
 		return (b.score - a.score);
@@ -156,7 +169,7 @@ var handle_search = function (body, callback) {
 	callback(false, JSON.stringify(results));
 };
 
-exports.score = function (opt, object, keywords) {
+var score = function (object, keywords) {
 	var word, index_name, index, i, j, tmp_obj, matches;
 	var b = false;
 	var score = 0;
@@ -192,42 +205,4 @@ exports.score = function (opt, object, keywords) {
 	return score;
 };
 
-var _score = function (object, keywords) {
-	var word, index_name, index, i, j, tmp_obj, matches;
-	var b = false;
-	var score = 0;
-	for (i=0; i<keywords.length; i++) {
-		word = keywords[i];
-		regexp = new RegExp(word, "gi");
-		for (index_name in opt.indexes) {
-			if (opt.indexes.hasOwnProperty(index_name)) {
-				index = opt.indexes[index_name];
-				tmp_obj = object;
-				for (j=0; j<index.path.length; j++) {
-					if (tmp_obj[index.path[j]]) {
-						tmp_obj = tmp_obj[index.path[j]];
-					} else {
-						b = true;
-						break;
-					}
-				}
-				if (b === true) {
-					b = false;
-					break;
-				}
-				if (typeof(tmp_obj) !== "string") {
-					break;
-				}
-				matches = tmp_obj.match(regexp);
-				if (matches) {
-					score += matches.length * index.score;
-				}
-			}
-		}
-	}
-};
-
-exports.lo = function (path) {
-	var opt_string = fs.readFileSync(path, "utf8");
-	return JSON.parse(opt_string);
-};
+init();
