@@ -1,10 +1,10 @@
 var http = require("http");
 var fs = require("fs");
 var crypto = require("crypto");
-var lazydb = require("./lazydb");
-var error = require("./error");
+//var lazydb = require("./lazydb");
+//var error = require("./error");
 
-var opt;
+//var opt;
 
 var load_options = function () {
 	var config_path = process.argv[2];
@@ -156,8 +156,9 @@ var handle_search = function (body, callback) {
 	callback(false, JSON.stringify(results));
 };
 
-var score = function (object, keywords) {
+exports.score = function (opt, object, keywords) {
 	var word, index_name, index, i, j, tmp_obj, matches;
+	var b = false;
 	var score = 0;
 	for (i=0; i<keywords.length; i++) {
 		word = keywords[i];
@@ -166,14 +167,67 @@ var score = function (object, keywords) {
 			if (opt.indexes.hasOwnProperty(index_name)) {
 				index = opt.indexes[index_name];
 				tmp_obj = object;
-				for (j=0; j<index.path.length; i++) {
-					tmp_obj = tmp_obj[index.path[i]];
+				for (j=0; j<index.path.length; j++) {
+					if (tmp_obj[index.path[j]]) {
+						tmp_obj = tmp_obj[index.path[j]];
+					} else {
+						b = true;
+						break;
+					}
+				}
+				if (b === true) {
+					b = false;
+					continue;
+				}
+				if (typeof(tmp_obj) !== "string") {
+					continue;
 				}
 				matches = tmp_obj.match(regexp);
 				if (matches) {
-					score += matches.length;
+					score += matches.length * index.score;
 				}
 			}
 		}
 	}
+	return score;
+};
+
+var _score = function (object, keywords) {
+	var word, index_name, index, i, j, tmp_obj, matches;
+	var b = false;
+	var score = 0;
+	for (i=0; i<keywords.length; i++) {
+		word = keywords[i];
+		regexp = new RegExp(word, "gi");
+		for (index_name in opt.indexes) {
+			if (opt.indexes.hasOwnProperty(index_name)) {
+				index = opt.indexes[index_name];
+				tmp_obj = object;
+				for (j=0; j<index.path.length; j++) {
+					if (tmp_obj[index.path[j]]) {
+						tmp_obj = tmp_obj[index.path[j]];
+					} else {
+						b = true;
+						break;
+					}
+				}
+				if (b === true) {
+					b = false;
+					break;
+				}
+				if (typeof(tmp_obj) !== "string") {
+					break;
+				}
+				matches = tmp_obj.match(regexp);
+				if (matches) {
+					score += matches.length * index.score;
+				}
+			}
+		}
+	}
+};
+
+exports.lo = function (path) {
+	var opt_string = fs.readFileSync(path, "utf8");
+	return JSON.parse(opt_string);
 };
